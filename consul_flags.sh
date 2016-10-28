@@ -1,0 +1,1 @@
+CONSUL_DATA="-server -bootstrap-expect=${SERVER_COUNT} -join=${CONSUL_JOIN} -data-dir=/opt/consul/data"
