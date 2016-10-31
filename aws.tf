@@ -3,15 +3,6 @@ provider "aws" {
   secret_key = "${var.secret_key}"
   region     = "${var.region}"
 }
-resource "aws_security_group" "osproducers" {
-  name = "os_producers"
-  vpc_id = "vpc-e6032a83"
-  description = "Security group to group the openshift nodes"
-
-  tags {
-    name = "ossg1"
-  }  
-}
 
 resource "aws_security_group" "osconsumers" {
 
@@ -23,8 +14,8 @@ resource "aws_security_group" "osconsumers" {
     from_port = "0"
     to_port = "0"
     protocol = "-1"
-    security_groups = ["${aws_security_group.osproducers.id}"]
-    cidr_blocks = ["199.38.154.0/24"]
+    self = true
+    cidr_blocks = ["73.210.192.218/32"]
   }
 
     egress {
@@ -101,7 +92,7 @@ data "aws_iam_policy_document" "os_s3_pol" {
       condition {
             test = "IpAddress"
             variable = "aws:SourceIp"
-            values = ["73.210.192.218/32", "${aws_instance.os_nexus1.public_ip}"]
+            values = ["73.210.192.218/32", "${aws_instance.consul.*.public_ip}"]
         }
     }
 }
@@ -111,7 +102,7 @@ resource "aws_s3_bucket_policy" "openshift_bucket_policy" {
   bucket = "${aws_s3_bucket.openshift_s3_bucket.bucket}"
   policy = "${data.aws_iam_policy_document.os_s3_pol.json}"
 }
-
+/*
 //Copy the nexus binary to the bucket
 resource "aws_s3_bucket_object" "nexus_object" {
     bucket = "openshifts3bucket"
@@ -121,15 +112,68 @@ resource "aws_s3_bucket_object" "nexus_object" {
 }
 
 //Creates the instance that nexus will be installed on.
+//Provides user_data to install nexus
 resource "aws_instance" "os_nexus1" {
     ami = "ami-2d39803a"
     instance_type = "t2.small"
     subnet_id = "subnet-49f27362"
     key_name = "ostempkey"
-    user_data = "${file("./user_data.sh")}"
+    user_data = "${file("./nexus_user_data.sh")}"
     vpc_security_group_ids = ["${aws_security_group.osproducers.id}", "${aws_security_group.osconsumers.id}"]
     iam_instance_profile = "${aws_iam_instance_profile.test_profile.id}"
     tags {
         Name = "OC-Nexus"
     }
+}
+
+//Creates the instance that jenkins will be installed on.
+resource "aws_instance" "jenkins" {
+    ami = "ami-2d39803a"
+    instance_type = "t2.medium"
+    subnet_id = "subnet-49f27362"
+    key_name = "ostempkey"
+    user_data = "${file("./jenkins_user_data.sh")}"
+    vpc_security_group_ids = ["${aws_security_group.osproducers.id}", "${aws_security_group.osconsumers.id}"]
+    iam_instance_profile = "${aws_iam_instance_profile.test_profile.id}"
+    tags {
+        Name = "OC-Jenkins"
+    }
+}
+*/
+
+resource "aws_instance" "consul" {
+    ami = "ami-2d39803a"
+    instance_type = "t2.micro"
+    subnet_id = "subnet-49f27362"
+    key_name = "ostempkey"
+    count = "${var.consul_servers}"
+    user_data = "${file("./consul_user_data.sh")}"
+    count = "${var.consul_servers}"
+    vpc_security_group_ids = ["${aws_security_group.osconsumers.id}"]
+    iam_instance_profile = "${aws_iam_instance_profile.test_profile.id}"
+    tags {
+        Name = "OC-Consul-${count.index}"
+    }
+}
+resource "aws_s3_bucket_object" "consul_firststart_file" {
+    depends_on = ["aws_s3_bucket.openshift_s3_bucket", "aws_instance.consul"]
+    bucket = "openshifts3bucket"
+    key = "./firststart"
+    source = "./firststart"
+    etag = "${md5(file("./firststart"))}"
+}
+resource "aws_s3_bucket_object" "consul_flags_file" {
+    depends_on = ["aws_s3_bucket.openshift_s3_bucket", "aws_instance.consul"]
+    bucket = "openshifts3bucket"
+    key = "./consul_flags"
+    content = "CONSUL_FLAGS=\"-server -bootstrap-expect=${var.consul_servers} -join=${aws_instance.consul.0.private_ip} -data-dir=/opt/consul/data -client 0.0.0.0 -ui\""
+}
+
+//Copy the nexus binary to the bucket
+resource "aws_s3_bucket_object" "consul_upstart_file" {
+    depends_on = ["aws_s3_bucket.openshift_s3_bucket"]
+    bucket = "openshifts3bucket"
+    key = "./upstart.conf"
+    source = "./upstart.conf"
+    etag = "${md5(file("./upstart.conf"))}"
 }
