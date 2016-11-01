@@ -10,6 +10,7 @@ resource "aws_security_group" "osconsumers" {
   vpc_id = "vpc-e6032a83"
   description = "Security group to allow all sources to intercommunicate and to talk out"
 
+
   ingress {
     from_port = "0"
     to_port = "0"
@@ -102,7 +103,7 @@ resource "aws_s3_bucket_policy" "openshift_bucket_policy" {
   bucket = "${aws_s3_bucket.openshift_s3_bucket.bucket}"
   policy = "${data.aws_iam_policy_document.os_s3_pol.json}"
 }
-/*
+
 //Copy the nexus binary to the bucket
 resource "aws_s3_bucket_object" "nexus_object" {
     bucket = "openshifts3bucket"
@@ -113,19 +114,20 @@ resource "aws_s3_bucket_object" "nexus_object" {
 
 //Creates the instance that nexus will be installed on.
 //Provides user_data to install nexus
-resource "aws_instance" "os_nexus1" {
+resource "aws_instance" "nexus1" {
     ami = "ami-2d39803a"
     instance_type = "t2.small"
     subnet_id = "subnet-49f27362"
     key_name = "ostempkey"
     user_data = "${file("./nexus_user_data.sh")}"
-    vpc_security_group_ids = ["${aws_security_group.osproducers.id}", "${aws_security_group.osconsumers.id}"]
+    vpc_security_group_ids = ["${aws_security_group.osconsumers.id}"]
     iam_instance_profile = "${aws_iam_instance_profile.test_profile.id}"
     tags {
         Name = "OC-Nexus"
     }
 }
 
+/*
 //Creates the instance that jenkins will be installed on.
 resource "aws_instance" "jenkins" {
     ami = "ami-2d39803a"
@@ -155,6 +157,33 @@ resource "aws_instance" "consul" {
         Name = "OC-Consul-${count.index}"
     }
 }
+
+data "template_file" "init" {
+    template = "${file("./firstagent.tpl")}"
+    vars {
+        server = "${aws_instance.consul.0.public_ip}"
+        myipaddr = "73.210.192.218"
+    }
+}
+
+resource "null_resource" "hold" {
+  triggers {
+    templatefile = "${data.template_file.init.rendered}"
+  }
+  provisioner "local-exec" {
+          command = "rm ./firstagent"
+  }
+  provisioner "local-exec" {
+          command = "echo \"${data.template_file.init.rendered}\" > ./firstagent"
+  }
+  provisioner "local-exec" {
+          command = "chmod 755 ./firstagent"
+  }
+  provisioner "local-exec" {
+          command = "./firstagent"
+  }
+}
+
 resource "aws_s3_bucket_object" "consul_firststart_file" {
     depends_on = ["aws_s3_bucket.openshift_s3_bucket", "aws_instance.consul"]
     bucket = "openshifts3bucket"
@@ -162,6 +191,7 @@ resource "aws_s3_bucket_object" "consul_firststart_file" {
     source = "./firststart"
     etag = "${md5(file("./firststart"))}"
 }
+
 resource "aws_s3_bucket_object" "consul_flags_file" {
     depends_on = ["aws_s3_bucket.openshift_s3_bucket", "aws_instance.consul"]
     bucket = "openshifts3bucket"
@@ -177,3 +207,29 @@ resource "aws_s3_bucket_object" "consul_upstart_file" {
     source = "./upstart.conf"
     etag = "${md5(file("./upstart.conf"))}"
 }
+
+provider "consul" {
+    datacenter = "dc1"
+}
+
+resource "consul_keys" "master" {
+    datacenter = "dc1"
+    token = "abcd"
+    key {
+          path = "service/app/master_address"
+          value = "${aws_instance.consul.0.public_ip}"
+    }
+}
+
+resource "consul_catalog_entry" "app" {
+    address = "${aws_instance.nexus1.public_ip}"
+    node = "nexus"
+    service = {
+        address = "127.0.0.1"
+        id = "redis1"
+        name = "redis"
+        port = 8000
+        tags = ["master", "v1"]
+    }
+}
+

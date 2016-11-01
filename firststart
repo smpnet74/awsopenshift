@@ -1,5 +1,2 @@
 #!/bin/bash
-until `start consul`
-do
-  sleep 5s
-done
+start consul

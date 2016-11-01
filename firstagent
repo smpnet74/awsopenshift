@@ -1,0 +1,2 @@
+#!/bin/bash
+nohup consul agent -server -datacenter dc2 -data-dir=/tmp -join-wan=54.210.75.191 --advertise-wan=73.210.192.218 -bootstrap-expect=1 &>/dev/null &

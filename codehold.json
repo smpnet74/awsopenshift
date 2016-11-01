@@ -1,0 +1,8 @@
+/*    provisioner "local-exec" {
+      command = "rm ./consul_flags"
+      command = "touch ./consul_flags"
+      command = "cat >./consul_flags << EOF
+CONSUL_FLAGS=\"-server -bootstrap-expect=${var.consul_servers} -join=${aws_instance.consul.0.private_ip} -data-dir=/opt/consul/data\"
+EOF"
+ }
+*/

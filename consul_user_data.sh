@@ -6,7 +6,7 @@ date '+%Y-%m-%d %H:%M:%S'
 sudo apt-get update
 sudo apt-get install -y curl wget unzip python-pip nmon
 sudo pip install awscli
-CONSUL=0.6.4
+CONSUL=0.7.0
 cd /tmp
 wget https://releases.hashicorp.com/consul/${CONSUL}/consul_${CONSUL}_linux_amd64.zip -O consul.zip
 unzip consul.zip >/dev/null
